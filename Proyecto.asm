@@ -58,6 +58,7 @@ lim_superior 	equ		1
 lim_inferior 	equ		23
 lim_izquierdo 	equ		1
 lim_derecho 	equ		39
+lim_derecho 	equ		39
 ;Valores de referencia para la posición inicial del jugador
 ini_columna 	equ 	lim_derecho/2
 ini_renglon 	equ 	22
@@ -303,16 +304,22 @@ imprime_ui:
 	call DIBUJA_UI 			;procedimiento que dibuja marco de la interfaz
 	muestra_cursor_mouse 	;hace visible el cursor del mouse
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;BUCLE PRINCIPAL DEL JUEGO;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;En "mouse_no_clic" se revisa que el boton izquierdo del mouse no esté presionado
 ;Si el botón está suelto, continúa a la sección "mouse"
 ;si no, se mantiene indefinidamente en "mouse_no_clic" hasta que se suelte
-mouse_no_clic:
-	lee_mouse
-	test bx,0001h
-	jnz mouse_no_clic
+
+;El bucle 'mouse_no_clic' se elimina ya que su 'espera' impedía la 
+;ejecución continua del bucle de juego y la lectura del teclado.
+
 ;Lee el mouse y avanza hasta que se haga clic en el boton izquierdo
 mouse:
-	lee_mouse
+	call REVISAR_TECLADO	;Revisa el teclado 
+	lee_mouse				;Revisa el mouse
+
 conversion_mouse:
 	;Leer la posicion del mouse y hacer la conversion a resolucion
 	;80x25 (columnas x renglones) en modo texto
@@ -332,7 +339,8 @@ conversion_mouse:
 
 	;Aquí se revisa si se hizo clic en el botón izquierdo
 	test bx,0001h 		;Para revisar si el boton izquierdo del mouse fue presionado
-	jz mouse 			;Si el boton izquierdo no fue presionado, vuelve a leer el estado del mouse
+	
+	jz fin_chequeo_botones ; Si no hay clic, salta toda la lógica de botones
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;Aqui va la lógica de la posicion del mouse;
@@ -342,7 +350,8 @@ conversion_mouse:
 	cmp dx,0
 	je boton_x
 
-	jmp mouse_no_clic
+	;Aquí el 'jmp mouse_no_clic' se cambia por un salto al final del bucle
+	jmp fin_chequeo_botones 
 boton_x:
 	jmp boton_x1
 
@@ -351,17 +360,31 @@ boton_x:
 boton_x1:
 	cmp cx,76
 	jge boton_x2
-	jmp mouse_no_clic
+	;Aquí el 'jmp mouse_no_clic' se cambia por un salto al final del bucle
+	jmp fin_chequeo_botones
 boton_x2:
 	cmp cx,78
 	jbe boton_x3
-	jmp mouse_no_clic
+	;Aquí el 'jmp mouse_no_clic' se cambia por un salto al final del bucle
+	jmp fin_chequeo_botones
 boton_x3:
 	;Se cumplieron todas las condiciones
 	jmp salir
-
+;Aquí se elimina el jmp 'mouse_no_clic' para evitar el bucle de espera
 mas_botones:
-	jmp mouse_no_clic
+	
+;Esta es la etiqueta de salto para 'jz fin_chequeo_botones'
+fin_chequeo_botones:
+
+	;Retraso para que el juego no corra tan rápido
+	mov cx, 03FFFh
+
+;Auí es para el bucle de espera
+delay_loop:
+	dec cx
+	jnz delay_loop
+	
+	jmp mouse 
 
 ;Si no se encontró el driver del mouse, muestra un mensaje y el usuario debe salir tecleando [enter]
 teclado:
@@ -378,6 +401,61 @@ salir:				;inicia etiqueta salir
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;PROCEDIMIENTOS;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	REVISAR_TECLADO proc
+		;Revisar si hay alguna tecla en el buffer
+		mov ah, 01h  	;Función 01h para evisar el estado del buffer de teclado
+		int 16h			;Interrupción de teclado
+		jz sin_tecla
+
+		mov ah, 00h  	;Función 00h para leer la tecla del buffer
+		int 16h 		;Interrupción de teclado
+
+		;Se clasifica la tecla presionada para el movimiento
+		cmp al, 'a'
+		je mover_izquierda ;Si es a, se mueve a la izquierda
+
+		cmp al, 'd'
+		je mover_derecha   ;Si es d, se mueve a la derecha
+
+		jmp sin_tecla		;Si no es ninguna, ignora
+
+	mover_izquierda:
+		;Se revisan los límites del área de juego(Las paredes)
+		mov al, [player_col]
+		cmp al, lim_izquierdo + 2  ;Compara con el límite + 2, para no sobrepasar el marco dibujado
+		jle sin_tecla              ;Si es <= 3, no se mueve
+
+		;Se borra la posición anterior del jugador si hubo movimiento
+		call BORRA_JUGADOR
+		
+		dec [player_col]
+		
+		;Se dibuja la nave en la nueva posición del jugador
+		call IMPRIME_JUGADOR
+		
+		jmp sin_tecla
+
+	mover_derecha:
+		;Se revisan los límites del área de juego(Las paredes)
+		mov al, [player_col]
+		cmp al, lim_derecho - 2 ;Compara con el límite - 2, para no sobrepasar el marco dibujado
+		jge sin_tecla         ; Si es >= 37, no se mueve
+
+		;Se borra la posición anterior del jugador si hubo movimiento
+		call BORRA_JUGADOR
+		
+		inc [player_col]
+		
+		;Se dibuja la nave en la nueva posición del jugador
+		call IMPRIME_JUGADOR
+		
+		jmp sin_tecla    	;Salida del procedimiento
+
+	sin_tecla:
+		ret 				;Etiqueta para la salida del procedimiento
+	REVISAR_TECLADO endp
+
 	DIBUJA_UI proc
 		;imprimir esquina superior izquierda del marco
 		posiciona_cursor 0,0
@@ -674,8 +752,40 @@ salir:				;inicia etiqueta salir
 
 	;Borra la nave del jugador, que recibe como parámetros las variables ren_aux y col_aux, que indican la posición central de la barra
 	DELETE_PLAYER proc
-		;Implementar
-
+	
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		add [ren_aux],2
+		
+		dec [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		
+		dec [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		
+		add [col_aux],3
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		
+		inc [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
 		ret
 	endp
 
