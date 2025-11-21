@@ -65,8 +65,8 @@ ini_renglon 	equ 	22
 
 ;Valores para la posición de los controles e indicadores dentro del juego
 ;Lives
-lives_col 		equ  	lim_derecho+7
-lives_ren 		equ  	4
+lives_col 		equ 	lim_derecho+7
+lives_ren 		equ 	4
 
 ;Scores
 hiscore_ren	 	equ 	11
@@ -118,7 +118,7 @@ player_ren		db 		ini_renglon 	;posicion en renglon del jugador
 enemy_col		db 		ini_columna 	;posicion en columna del enemigo
 enemy_ren		db 		3 				;posicion en renglon del enemigo
 
-col_aux 		db 		0  		;variable auxiliar para operaciones con posicion - columna
+col_aux 		db 		0 		;variable auxiliar para operaciones con posicion - columna
 ren_aux 		db 		0 		;variable auxiliar para operaciones con posicion - renglon
 
 conta 			db 		0 		;contador
@@ -143,6 +143,16 @@ boton_bg_color	db 		0
 ocho			db 		8
 ;Cuando el driver del mouse no está disponible
 no_mouse		db 	'No se encuentra driver de mouse. Presione [enter] para salir$'
+
+;--- (MODIFICADO) VARIABLES PARA BALAS MULTIPLES ---
+;Usamos arreglos para permitir hasta 10 balas simultaneas
+MAX_BALAS       equ 10              
+balas_activas   db MAX_BALAS dup(0) ; 0 = inactiva, 1 = activa
+balas_col       db MAX_BALAS dup(0) ; Posicion Columna de cada bala
+balas_ren       db MAX_BALAS dup(0) ; Posicion Renglon de cada bala
+
+tick_anterior   dw 0                ; Control de velocidad global
+;---------------------------------------------------
 
 ;////////////////////////////////////////////////////
 
@@ -201,7 +211,7 @@ endm
 apaga_cursor_parpadeo	macro
 	mov ax,1003h 		;Opcion 1003h
 	xor bl,bl 			;BL = 0, parámetro para int 10h opción 1003h
-  	int 10h 			;int 10, opcion 01h. Cambia la visibilidad del cursor del teclado
+ 	int 10h 			;int 10, opcion 01h. Cambia la visibilidad del cursor del teclado
 endm
 
 ;imprime_caracter_color - Imprime un caracter de cierto color en pantalla, especificado por 'caracter', 'color' y 'bg_color'. 
@@ -303,6 +313,11 @@ imprime_ui:
 	apaga_cursor_parpadeo 	;Deshabilita parpadeo del cursor
 	call DIBUJA_UI 			;procedimiento que dibuja marco de la interfaz
 	muestra_cursor_mouse 	;hace visible el cursor del mouse
+    
+    ;Inicializa la variable tick_anterior con el tiempo del sistema
+    mov ah, 00h         ;Servicio 00h de Int 1Ah, leer reloj del sistema
+    int 1Ah             ;Interrupcion 1Ah. Devuelve DX = contador de ticks (parte baja)
+    mov [tick_anterior], dx ;Guarda el valor inicial de los ticks
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;BUCLE PRINCIPAL DEL JUEGO;;;;;;;;;;;;;;;;;;
@@ -318,6 +333,7 @@ imprime_ui:
 ;Lee el mouse y avanza hasta que se haga clic en el boton izquierdo
 mouse:
 	call REVISAR_TECLADO	;Revisa el teclado 
+    call ACTUALIZA_PROYECTIL ;Llama al procedimiento para actualizar las balas
 	lee_mouse				;Revisa el mouse
 
 conversion_mouse:
@@ -403,12 +419,13 @@ salir:				;inicia etiqueta salir
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 	REVISAR_TECLADO proc
+	revisar_bucle:          ;Etiqueta para vaciar el buffer del teclado
 		;Revisar si hay alguna tecla en el buffer
-		mov ah, 01h  	;Función 01h para evisar el estado del buffer de teclado
+		mov ah, 01h 	;Función 01h para evisar el estado del buffer de teclado
 		int 16h			;Interrupción de teclado
-		jz sin_tecla
+		jz fin_revisar
 
-		mov ah, 00h  	;Función 00h para leer la tecla del buffer
+		mov ah, 00h 	;Función 00h para leer la tecla del buffer
 		int 16h 		;Interrupción de teclado
 
 		;Se clasifica la tecla presionada para el movimiento
@@ -416,15 +433,45 @@ salir:				;inicia etiqueta salir
 		je mover_izquierda ;Si es a, se mueve a la izquierda
 
 		cmp al, 'd'
-		je mover_derecha   ;Si es d, se mueve a la derecha
+		je mover_derecha 	;Si es d, se mueve a la derecha
+        
+        ;Revisar si se presiono la tecla espacio para disparar
+        cmp al, 32      ;Compara AL con 32d (codigo ASCII del espacio)
+        je disparar     ;Si es igual, salta a la etiqueta 'disparar'
 
-		jmp sin_tecla		;Si no es ninguna, ignora
+		jmp revisar_bucle		;Si no es ninguna, ignora y revisa la siguiente
+    
+    disparar:
+        ; (MODIFICADO) Busca bala libre en el arreglo
+        mov si, 0           ; Indice del arreglo
+        mov cx, MAX_BALAS   ; Contador para el ciclo
+    buscar_bala_libre:
+        cmp byte ptr [balas_activas + si], 0 ; ¿Esta bala esta libre?
+        je activar_bala             ; Si es 0, la usamos
+        inc si                      ; Si no, pasamos a la siguiente
+        loop buscar_bala_libre      
+        
+        jmp revisar_bucle   ; Si todas estan ocupadas, no dispara
+
+    activar_bala:
+        mov byte ptr [balas_activas + si], 1 ; Activa esta bala especifica
+        
+        ;Calcula la posicion inicial del proyectil (centro de la nave)
+        mov al, [player_col]      ;Carga columna del jugador
+        inc al                    ;Incrementa para centrar (nave ancho 3)
+        mov [balas_col + si], al   ;Guarda columna en el arreglo
+        
+        mov al, [player_ren]      ;Carga renglon del jugador
+        sub al, 3                 ;Resta 3 para no borrar nave
+        mov [balas_ren + si], al   ;Guarda renglon en el arreglo
+        
+        jmp revisar_bucle         ;Termina y sigue revisando teclado
 
 	mover_izquierda:
 		;Se revisan los límites del área de juego(Las paredes)
 		mov al, [player_col]
 		cmp al, lim_izquierdo + 2  ;Compara con el límite + 2, para no sobrepasar el marco dibujado
-		jle sin_tecla              ;Si es <= 3, no se mueve
+		jle revisar_bucle          ;Si es <= 3, no se mueve
 
 		;Se borra la posición anterior del jugador si hubo movimiento
 		call BORRA_JUGADOR
@@ -434,13 +481,13 @@ salir:				;inicia etiqueta salir
 		;Se dibuja la nave en la nueva posición del jugador
 		call IMPRIME_JUGADOR
 		
-		jmp sin_tecla
+		jmp revisar_bucle
 
 	mover_derecha:
 		;Se revisan los límites del área de juego(Las paredes)
 		mov al, [player_col]
 		cmp al, lim_derecho - 2 ;Compara con el límite - 2, para no sobrepasar el marco dibujado
-		jge sin_tecla         ; Si es >= 37, no se mueve
+		jge revisar_bucle         ; Si es >= 37, no se mueve
 
 		;Se borra la posición anterior del jugador si hubo movimiento
 		call BORRA_JUGADOR
@@ -450,9 +497,9 @@ salir:				;inicia etiqueta salir
 		;Se dibuja la nave en la nueva posición del jugador
 		call IMPRIME_JUGADOR
 		
-		jmp sin_tecla    	;Salida del procedimiento
+		jmp revisar_bucle 	;Salida del procedimiento
 
-	sin_tecla:
+	fin_revisar:
 		ret 				;Etiqueta para la salida del procedimiento
 	REVISAR_TECLADO endp
 
@@ -592,7 +639,7 @@ salir:				;inicia etiqueta salir
 		mov [boton_columna],pause_col 	;Columna en "pause_col"
 		call IMPRIME_BOTON 				;Procedimiento para imprimir el botón
 		;Botón PLAY
-		mov [boton_caracter],16d  		;Carácter '►'
+		mov [boton_caracter],16d 		;Carácter '►'
 		mov [boton_color],bgAmarillo 	;Background amarillo
 		mov [boton_renglon],play_ren 	;Renglón en "play_ren"
 		mov [boton_columna],play_col 	;Columna en "play_col"
@@ -886,6 +933,73 @@ salir:				;inicia etiqueta salir
 		call PRINT_ENEMY
 		ret
 	endp
+
+	;Procedimineto para actualizar múltiples balas
+    ACTUALIZA_PROYECTIL proc
+        ;Leer reloj del sistema para controlar velocidad
+        mov ah, 00h               
+        int 1Ah                   
+        mov bx, dx                
+        sub bx, [tick_anterior]   
+        cmp bx, 1                 
+        jl fin_actualiza          
+
+        ;Si paso el tiempo, actualiza tick y mueve las balas
+        mov [tick_anterior], dx   
+        
+        mov si, 0           ;SI sera nuestro Indice (0 a 9)
+    
+    ciclo_balas:
+        cmp si, MAX_BALAS   ;¿Ya revisamos las 10 balas?
+        jge fin_actualiza   ;Si SI >= 10, terminamos
+
+        cmp byte ptr [balas_activas + si], 1 ;¿Esta activa esta bala?
+        jne siguiente_bala          ;Si no, pasa a la siguiente
+        
+        ;Lógica para el movimiento de la bala actual
+        ;Borrar proyectil en posicion actual
+        mov al, [balas_ren + si]  
+        mov dl, [balas_col + si]  
+        posiciona_cursor al, dl
+        imprime_caracter_color ' ', cNegro, bgNegro 
+
+        ;Mover hacia arriba
+        dec byte ptr [balas_ren + si] 
+
+        ;Verificar colisiones con la parte de arriba
+        mov al, [balas_ren + si]
+        cmp al, lim_superior
+        jle desactivar_bala_actual    
+
+        ;Deteccion de colision (Enemigo)
+        mov dl, [balas_col + si]
+        posiciona_cursor al, dl       
+        mov ah, 08h                   
+        mov bh, 00h
+        int 10h                       
+        
+        cmp al, 32                    
+        jne desactivar_bala_actual    
+
+        ;Dibujar en nueva posicion (Solo si no choco)
+        mov al, [balas_ren + si]
+        mov dl, [balas_col + si]
+        posiciona_cursor al, dl
+        imprime_caracter_color '*', cAmarillo, bgNegro 
+
+        jmp siguiente_bala
+
+    desactivar_bala_actual:
+
+        mov byte ptr [balas_activas + si], 0 
+
+    siguiente_bala:
+        inc si              ;Pasamos a la siguiente bala (0->1->2...)
+        jmp ciclo_balas     ;Repetimos el ciclo
+
+    fin_actualiza:
+        ret
+    ACTUALIZA_PROYECTIL endp
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;FIN PROCEDIMIENTOS;;;;;;
