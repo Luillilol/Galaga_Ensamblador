@@ -2,4 +2,7 @@
 .obj
 .map
 .log
-.lst
+.lst*.OBJ
+*.EXE
+*.OBJ
+*.MAP
