@@ -77,24 +77,24 @@ score_col 		equ 	lim_derecho+7
 ;Botón STOP
 stop_col 		equ 	lim_derecho+10
 stop_ren 		equ 	19
-stop_izq 		equ 	stop_col-1
-stop_der 		equ 	stop_col+1
+stop_izq 		equ 	stop_col
+stop_der 		equ 	stop_col+2
 stop_sup 		equ 	stop_ren-1
 stop_inf 		equ 	stop_ren+1
 
 ;Botón PAUSE
 pause_col 		equ 	stop_col+10
 pause_ren 		equ 	19
-pause_izq 		equ 	pause_col-1
-pause_der 		equ 	pause_col+1
+pause_izq 		equ 	pause_col
+pause_der 		equ 	pause_col+2
 pause_sup 		equ 	pause_ren-1
 pause_inf 		equ 	pause_ren+1
 
 ;Botón PLAY
 play_col 		equ 	pause_col+10
 play_ren 		equ 	19
-play_izq 		equ 	play_col-1
-play_der 		equ 	play_col+1
+play_izq 		equ 	play_col
+play_der 		equ 	play_col+2
 play_sup 		equ 	play_ren-1
 play_inf 		equ 	play_ren+1
 
@@ -323,18 +323,17 @@ imprime_ui:
 ;;;;;;;;;;;;;;;;;BUCLE PRINCIPAL DEL JUEGO;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;En "mouse_no_clic" se revisa que el boton izquierdo del mouse no esté presionado
-;Si el botón está suelto, continúa a la sección "mouse"
-;si no, se mantiene indefinidamente en "mouse_no_clic" hasta que se suelte
-
-;El bucle 'mouse_no_clic' se elimina ya que su 'espera' impedía la 
-;ejecución continua del bucle de juego y la lectura del teclado.
-
 ;Lee el mouse y avanza hasta que se haga clic en el boton izquierdo
 mouse:
-	call REVISAR_TECLADO	;Revisa el teclado 
-    call ACTUALIZA_PROYECTIL ;Llama al procedimiento para actualizar las balas
-	lee_mouse				;Revisa el mouse
+	; Verificar estado del juego (0=Stop, 1=Play, 2=Pause)
+	cmp [status], 1
+	jne saltar_logica_juego ; Si NO es play, salta la logica (pausa o stop)
+
+	call REVISAR_TECLADO	 ; Revisa teclado y dispara balas
+    call ACTUALIZA_PROYECTIL ; Mueve las balas existentes
+
+saltar_logica_juego:
+	lee_mouse				 ; Siempre revisa el mouse (para poder dar click en Play)
 
 conversion_mouse:
 	;Leer la posicion del mouse y hacer la conversion a resolucion
@@ -361,13 +360,19 @@ conversion_mouse:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;Aqui va la lógica de la posicion del mouse;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	;Si el mouse fue presionado en el renglon 0
-	;se va a revisar si fue dentro del boton [X]
+
+	;Si el mouse fue presionado en el renglon 0 (Boton X)
 	cmp dx,0
 	je boton_x
 
-	;Aquí el 'jmp mouse_no_clic' se cambia por un salto al final del bucle
-	jmp fin_chequeo_botones 
+	cmp dx, 19
+	jl fin_chequeo_botones ; Si es menor a 19, no es
+	cmp dx, 21
+	jg fin_chequeo_botones ; Si es mayor a 21, no es
+	
+	; Si paso, esta en renglon 19, 20 o 21. Vamos a checar columnas.
+	jmp mas_botones
+
 boton_x:
 	jmp boton_x1
 
@@ -386,8 +391,41 @@ boton_x2:
 boton_x3:
 	;Se cumplieron todas las condiciones
 	jmp salir
-;Aquí se elimina el jmp 'mouse_no_clic' para evitar el bucle de espera
+
 mas_botones:
+	;Checar Botón stop
+	cmp cx, stop_izq
+	jl revisar_pause 	; Si esta a la izquierda, checa el siguiente
+	cmp cx, stop_der
+	jg revisar_pause 	; Si esta a la derecha, checa el siguiente
+	
+	;Clic en Stop
+	mov [status], 0		 ; Cambiar estado a 0 (Stop)
+	call DATOS_INICIALES ; Reiniciar vidas, puntaje y posiciones
+	call DIBUJA_UI		 ; Limpiar pantalla y redibujar interfaz limpia
+	jmp fin_chequeo_botones
+
+revisar_pause:
+	;Checar Botón pause
+	cmp cx, pause_izq
+	jl revisar_play
+	cmp cx, pause_der
+	jg revisar_play
+	
+	;Clic en pause
+	mov [status], 2		; Cambiar estado a 2 (Pause) - Solo congela
+	jmp fin_chequeo_botones
+
+revisar_play:
+	;Checar Botón play
+	cmp cx, play_izq
+	jl fin_chequeo_botones
+	cmp cx, play_der
+	jg fin_chequeo_botones
+	
+	;Clic en play
+	mov [status], 1		; Cambiar estado a 1 (Play) - Reactiva el juego
+	jmp fin_chequeo_botones
 	
 ;Esta es la etiqueta de salto para 'jz fin_chequeo_botones'
 fin_chequeo_botones:
@@ -395,7 +433,7 @@ fin_chequeo_botones:
 	;Retraso para que el juego no corra tan rápido
 	mov cx, 03FFFh
 
-;Auí es para el bucle de espera
+;Aquí es para el bucle de espera
 delay_loop:
 	dec cx
 	jnz delay_loop
