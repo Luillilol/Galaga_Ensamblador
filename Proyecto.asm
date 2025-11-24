@@ -123,7 +123,7 @@ ren_aux 		db 		0 		;variable auxiliar para operaciones con posicion - renglon
 
 conta 			db 		0 		;contador
 
-;; Variables de ayuda para lectura de tiempo del sistema
+;Variables de ayuda para lectura de tiempo del sistema
 tick_ms			dw 		55 		;55 ms por cada tick del sistema, esta variable se usa para operación de MUL convertir ticks a segundos
 mil				dw		1000 	;1000 auxiliar para operación DIV entre 1000
 diez 			dw 		10 		;10 auxiliar para operaciones
@@ -144,7 +144,6 @@ ocho			db 		8
 ;Cuando el driver del mouse no está disponible
 no_mouse		db 	'No se encuentra driver de mouse. Presione [enter] para salir$'
 
-;--- (MODIFICADO) VARIABLES PARA BALAS MULTIPLES ---
 ;Usamos arreglos para permitir hasta 10 balas simultaneas
 MAX_BALAS       equ 10              
 balas_activas   db MAX_BALAS dup(0) ; 0 = inactiva, 1 = activa
@@ -480,7 +479,7 @@ salir:				;inicia etiqueta salir
 		jmp revisar_bucle		;Si no es ninguna, ignora y revisa la siguiente
     
     disparar:
-        ; (MODIFICADO) Busca bala libre en el arreglo
+        ;Busca bala libre en el arreglo
         mov si, 0           ; Indice del arreglo
         mov cx, MAX_BALAS   ; Contador para el ciclo
     buscar_bala_libre:
