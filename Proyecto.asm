@@ -118,6 +118,11 @@ player_ren		db 		ini_renglon 	;posicion en renglon del jugador
 enemy_col		db 		ini_columna 	;posicion en columna del enemigo
 enemy_ren		db 		3 				;posicion en renglon del enemigo
 
+enemigo_direccion	db		1				;1: Derecha, 255 (-1): Izquierda
+enemigo_umbral_mov	db		15				;Mover el enemigo cada 15 frames/loops (control de velocidad)
+enemigo_contador_vel	db	0				;Contador para la velocidad del enemigo
+enemigo_caracter	db		178d			;Caracter para dibujar el enemigo
+
 col_aux 		db 		0 		;variable auxiliar para operaciones con posicion - columna
 ren_aux 		db 		0 		;variable auxiliar para operaciones con posicion - renglon
 
@@ -144,7 +149,6 @@ ocho			db 		8
 ;Cuando el driver del mouse no está disponible
 no_mouse		db 	'No se encuentra driver de mouse. Presione [enter] para salir$'
 
-;--- (MODIFICADO) VARIABLES PARA BALAS MULTIPLES ---
 ;Usamos arreglos para permitir hasta 10 balas simultaneas
 MAX_BALAS       equ 10              
 balas_activas   db MAX_BALAS dup(0) ; 0 = inactiva, 1 = activa
@@ -327,13 +331,14 @@ imprime_ui:
 mouse:
 	; Verificar estado del juego (0=Stop, 1=Play, 2=Pause)
 	cmp [status], 1
-	jne saltar_logica_juego ; Si NO es play, salta la logica (pausa o stop)
+	jne saltar_logica_juego ;Si NO es play, salta la logica (pausa o stop)
 
-	call REVISAR_TECLADO	 ; Revisa teclado y dispara balas
-    call ACTUALIZA_PROYECTIL ; Mueve las balas existentes
+	call REVISAR_TECLADO	 ;Revisa teclado y dispara balas
+    call ACTUALIZA_PROYECTIL ;Mueve las balas existentes
+	call ACTUALIZA_ENEMIGO	 ;Mueve el enemigo y gestiona sus límites
 
 saltar_logica_juego:
-	lee_mouse				 ; Siempre revisa el mouse (para poder dar click en Play)
+	lee_mouse				 ;Siempre revisa el mouse (para poder dar click en Play)
 
 conversion_mouse:
 	;Leer la posicion del mouse y hacer la conversion a resolucion
@@ -480,7 +485,7 @@ salir:				;inicia etiqueta salir
 		jmp revisar_bucle		;Si no es ninguna, ignora y revisa la siguiente
     
     disparar:
-        ; (MODIFICADO) Busca bala libre en el arreglo
+        ;Busca bala libre en el arreglo
         mov si, 0           ; Indice del arreglo
         mov cx, MAX_BALAS   ; Contador para el ciclo
     buscar_bala_libre:
@@ -757,17 +762,17 @@ salir:				;inicia etiqueta salir
 
 	IMPRIME_DATOS_INICIALES proc
 		call DATOS_INICIALES 		;inicializa variables de juego
-		;imprime la 'nave' del jugador
-		;borra la posición actual, luego se reinicia la posición y entonces se vuelve a imprimir
+		
+		;Reinicia la posición del jugador y lo imprime
 		call BORRA_JUGADOR
 		mov [player_col], ini_columna
 		mov [player_ren], ini_renglon
-		;Imprime jugador
 		call IMPRIME_JUGADOR
 
-		;Borrar posicion actual del enemigo y reiniciar su posicion
-
-		;Imprime enemigo
+		;Reinicia la posición del enemigo y lo imprime
+		call BORRA_ENEMIGO 			;Borra enemigo si ya existía
+		mov [enemy_col], ini_columna
+		mov [enemy_ren], 3
 		call IMPRIME_ENEMIGO
 
 		ret
@@ -777,6 +782,16 @@ salir:				;inicia etiqueta salir
 	DATOS_INICIALES proc
 		mov [player_score],0
 		mov [player_lives], 3
+		mov [enemigo_direccion], 1 		;NUEVO: Reinicia dirección
+		mov [enemigo_contador_vel], 0 	;Reinicia contador de velocidad
+		
+		; Reinicializar balas
+		mov cx, MAX_BALAS
+		mov si, 0
+	clear_bullets:
+		mov byte ptr [balas_activas + si], 0
+		inc si
+		loop clear_bullets
 		ret
 	endp
 
@@ -877,6 +892,7 @@ salir:				;inicia etiqueta salir
 	;Imprime la nave del enemigo
 	PRINT_ENEMY proc
 
+		mov al, [enemigo_caracter]
 		posiciona_cursor [ren_aux],[col_aux]
 		imprime_caracter_color 178,cRojo,bgNegro
 		inc [ren_aux]
@@ -912,6 +928,119 @@ salir:				;inicia etiqueta salir
 		imprime_caracter_color 178,cRojo,bgNegro
 		ret
 	endp
+
+	;Borra el enemigo usando el mismo patrón que PRINT_ENEMY
+	DELETE_ENEMY proc
+		; Borra la nave del enemigo (dibuja espacios ' ')
+		
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		sub [ren_aux],2
+		
+		dec [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		
+		dec [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		
+		add [col_aux],3
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		inc [ren_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		dec [ren_aux]
+		
+		inc [col_aux]
+		posiciona_cursor [ren_aux],[col_aux]
+		imprime_caracter_color ' ',cNegro,bgNegro
+		ret
+	endp
+
+	;Llama a DELETE_ENEMY con las coordenadas del enemigo
+	BORRA_ENEMIGO proc
+		mov al,[enemy_col]
+		mov ah,[enemy_ren]
+		mov [col_aux],al
+		mov [ren_aux],ah
+		call DELETE_ENEMY
+		ret
+	endp
+
+	;Lógica de movimiento y rebote del enemigo
+	ACTUALIZA_ENEMIGO proc
+		inc [enemigo_contador_vel]
+		
+		;Compara si el contador de velocidad alcanzó el umbral
+		mov al, [enemigo_contador_vel]
+		cmp al, [enemigo_umbral_mov]
+		jl fin_actualiza_enemigo ; Si es menor, no se mueve todavía
+		
+		;Reinicia el contador de velocidad
+		mov [enemigo_contador_vel], 0
+
+		;Borrar enemigo en la posición actual
+		call BORRA_ENEMIGO
+		
+		;Determinar la nueva posición y la dirección
+		mov al, [enemy_col]
+		mov bl, [enemigo_direccion]
+
+		;Checar si va a la derecha (enemigo_direccion = 1)
+		cmp bl, 1
+		je .mover_derecha
+		
+		;Si no es 1, asume izquierda (enemigo_direccion = 255)
+		;Revisar límite izquierdo (posición central del enemigo: lim_izquierdo + 2)
+		cmp al, lim_izquierdo + 2
+		jle .cambiar_a_derecha ; Si toca el límite, cambia dirección
+		
+		; Mover a la izquierda
+		dec [enemy_col]
+		jmp .dibujar_enemigo
+		
+	.mover_derecha:
+		; Revisar límite derecho (posición central del enemigo: lim_derecho - 2)
+		cmp al, lim_derecho - 2
+		jge .cambiar_a_izquierda ; Si toca el límite, cambia dirección
+		
+		; Mover a la derecha
+		inc [enemy_col]
+		jmp .dibujar_enemigo
+		
+	.cambiar_a_izquierda:
+		; Cambiar dirección a izquierda (255)
+		mov [enemigo_direccion], 255
+		; Mover a la izquierda para separarse del borde
+		dec [enemy_col]
+		jmp .dibujar_enemigo
+
+	.cambiar_a_derecha:
+		; Cambiar dirección a derecha (1)
+		mov [enemigo_direccion], 1
+		; Mover a la derecha para separarse del borde
+		inc [enemy_col]
+		jmp .dibujar_enemigo
+
+	.dibujar_enemigo:
+		; 3. Dibujar enemigo en la nueva posición
+		call IMPRIME_ENEMIGO
+		
+	fin_actualiza_enemigo:
+		ret
+	ACTUALIZA_ENEMIGO endp
 
 	;procedimiento IMPRIME_BOTON
 	;Dibuja un boton que abarca 3 renglones y 5 columnas
