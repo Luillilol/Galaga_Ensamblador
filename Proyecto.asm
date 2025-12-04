@@ -329,7 +329,7 @@ imprime_ui:
 
 ;Lee el mouse y avanza hasta que se haga clic en el boton izquierdo
 mouse:
-	; Verificar estado del juego (0=Stop, 1=Play, 2=Pause)
+	;Verificar estado del juego (0=Stop, 1=Play, 2=Pause)
 	cmp [status], 1
 	jne saltar_logica_juego ;Si NO es play, salta la logica (pausa o stop)
 
@@ -400,14 +400,14 @@ boton_x3:
 mas_botones:
 	;Checar Botón stop
 	cmp cx, stop_izq
-	jl revisar_pause 	; Si esta a la izquierda, checa el siguiente
+	jl revisar_pause 	;Si esta a la izquierda, checa el siguiente
 	cmp cx, stop_der
-	jg revisar_pause 	; Si esta a la derecha, checa el siguiente
+	jg revisar_pause 	;Si esta a la derecha, checa el siguiente
 	
 	;Clic en Stop
-	mov [status], 0		 ; Cambiar estado a 0 (Stop)
-	call DATOS_INICIALES ; Reiniciar vidas, puntaje y posiciones
-	call DIBUJA_UI		 ; Limpiar pantalla y redibujar interfaz limpia
+	mov [status], 0		 ;Cambiar estado a 0 (Stop)
+	call DATOS_INICIALES ;Reiniciar vidas, puntaje y posiciones
+	call DIBUJA_UI		 ;Limpiar pantalla y redibujar interfaz limpia
 	jmp fin_chequeo_botones
 
 revisar_pause:
@@ -429,7 +429,7 @@ revisar_play:
 	jg fin_chequeo_botones
 	
 	;Clic en play
-	mov [status], 1		; Cambiar estado a 1 (Play) - Reactiva el juego
+	mov [status], 1		;Cambiar estado a 1 (Play) - Reactiva el juego
 	jmp fin_chequeo_botones
 	
 ;Esta es la etiqueta de salto para 'jz fin_chequeo_botones'
@@ -486,15 +486,15 @@ salir:				;inicia etiqueta salir
     
     disparar:
         ;Busca bala libre en el arreglo
-        mov si, 0           ; Indice del arreglo
-        mov cx, MAX_BALAS   ; Contador para el ciclo
+        mov si, 0           ;Indice del arreglo
+        mov cx, MAX_BALAS   ;Contador para el ciclo
     buscar_bala_libre:
         cmp byte ptr [balas_activas + si], 0 ; ¿Esta bala esta libre?
-        je activar_bala             ; Si es 0, la usamos
-        inc si                      ; Si no, pasamos a la siguiente
+        je activar_bala             ;Si es 0, la usamos
+        inc si                      ;Si no, pasamos a la siguiente
         loop buscar_bala_libre      
         
-        jmp revisar_bucle   ; Si todas estan ocupadas, no dispara
+        jmp revisar_bucle   ;Si todas estan ocupadas, no dispara
 
     activar_bala:
         mov byte ptr [balas_activas + si], 1 ; Activa esta bala especifica
@@ -502,11 +502,11 @@ salir:				;inicia etiqueta salir
         ;Calcula la posicion inicial del proyectil (centro de la nave)
         mov al, [player_col]      ;Carga columna del jugador
         inc al                    ;Incrementa para centrar (nave ancho 3)
-        mov [balas_col + si], al   ;Guarda columna en el arreglo
+        mov [balas_col + si], al  ;Guarda columna en el arreglo
         
         mov al, [player_ren]      ;Carga renglon del jugador
         sub al, 3                 ;Resta 3 para no borrar nave
-        mov [balas_ren + si], al   ;Guarda renglon en el arreglo
+        mov [balas_ren + si], al  ;Guarda renglon en el arreglo
         
         jmp revisar_bucle         ;Termina y sigue revisando teclado
 
@@ -529,8 +529,8 @@ salir:				;inicia etiqueta salir
 	mover_derecha:
 		;Se revisan los límites del área de juego(Las paredes)
 		mov al, [player_col]
-		cmp al, lim_derecho - 2 ;Compara con el límite - 2, para no sobrepasar el marco dibujado
-		jge revisar_bucle         ; Si es >= 37, no se mueve
+		cmp al, lim_derecho - 2   ;Compara con el límite - 2, para no sobrepasar el marco dibujado
+		jge revisar_bucle         ;Si es >= 37, no se mueve
 
 		;Se borra la posición anterior del jugador si hubo movimiento
 		call BORRA_JUGADOR
@@ -708,7 +708,7 @@ salir:				;inicia etiqueta salir
 	endp
 
 	IMPRIME_HISCORE proc
-	;Imprime "player_score" en la posición relativa a 'hiscore_ren' y 'hiscore_col'
+		;Imprime "player_score" en la posición relativa a 'hiscore_ren' y 'hiscore_col'
 		mov [ren_aux],hiscore_ren
 		mov [col_aux],hiscore_col+20
 		mov bx,[player_hiscore]
@@ -780,20 +780,41 @@ salir:				;inicia etiqueta salir
 
 	;Inicializa variables del juego
 	DATOS_INICIALES proc
-		mov [player_score],0
-		mov [player_lives], 3
-		mov [enemigo_direccion], 1 		;NUEVO: Reinicia dirección
-		mov [enemigo_contador_vel], 0 	;Reinicia contador de velocidad
-		
-		; Reinicializar balas
-		mov cx, MAX_BALAS
-		mov si, 0
+	    mov [player_score],0
+	    mov [player_lives], 3
+	    mov [enemigo_direccion], 1      
+	    mov [enemigo_contador_vel], 0   
+	    
+	    ;Reinicializar balas
+	    mov cx, MAX_BALAS
+	    mov si, 0
+
 	clear_bullets:
-		mov byte ptr [balas_activas + si], 0
-		inc si
-		loop clear_bullets
-		ret
-	endp
+	    ;Verificamos si la bala está activa antes de apagarla
+	    cmp byte ptr [balas_activas + si], 1
+	    jne siguiente_reset_bala ;Si no está activa, saltamos
+
+	    ;Si está activa, hay que borrarla de la pantalla primero
+	    ;Guardamos CX en la pila
+	    push cx 
+	    
+	    mov al, [balas_ren + si]   ;Renglon actual de la bala
+	    mov dl, [balas_col + si]   ;Columna actual de la bala
+	    posiciona_cursor al, dl
+	    
+	    ;Limpiamos
+	    imprime_caracter_color ' ', cNegro, bgNegro 
+	    
+	    pop cx ;Recuperamos la cuenta del ciclo
+
+	siguiente_reset_bala:
+	    ;Liberamos la bala para usarla de nuevo
+	    mov byte ptr [balas_activas + si], 0
+	    inc si
+	    loop clear_bullets
+	    
+	    ret
+	DATOS_INICIALES endp
 
 	;Imprime los caracteres ☻ que representan vidas. Inicialmente se imprime el número de 'player_lives'
 	IMPRIME_LIVES proc
@@ -1161,7 +1182,7 @@ salir:				;inicia etiqueta salir
         mov byte ptr [balas_activas + si], 0 
 
     siguiente_bala:
-        inc si              ;Pasamos a la siguiente bala (0->1->2...)
+        inc si              ;Pasamos a la siguiente bala
         jmp ciclo_balas     ;Repetimos el ciclo
 
     fin_actualiza:
