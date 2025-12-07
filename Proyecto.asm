@@ -122,6 +122,9 @@ enemigo_direccion	db		1				;1: Derecha, 255 (-1): Izquierda
 enemigo_umbral_mov	db		15				;Mover el enemigo cada 15 frames/loops (control de velocidad)
 enemigo_contador_vel	db	0				;Contador para la velocidad del enemigo
 enemigo_caracter	db		178d			;Caracter para dibujar el enemigo
+enemigo_dir_vertical  db 1     ; 1 = bajar, -1 = subir
+
+
 
 col_aux 		db 		0 		;variable auxiliar para operaciones con posicion - columna
 ren_aux 		db 		0 		;variable auxiliar para operaciones con posicion - renglon
@@ -157,6 +160,20 @@ balas_ren       db MAX_BALAS dup(0) ; Posicion Renglon de cada bala
 
 tick_anterior   dw 0                ; Control de velocidad global
 ;---------------------------------------------------
+
+;---------------Balas enemigas -------------------------
+MAX_BE               EQU 5              ; balas enemigas máximas
+
+be_activas           db MAX_BE dup(0)   ; 0 = apagada, 1 = activa
+be_ren               db MAX_BE dup(0)
+be_col               db MAX_BE dup(0)
+
+tick_be              dw 0               ; velocidad de movimiento (ticks)
+tick_disparo_enemy   dw 0               ; frecuencia de disparo
+
+
+
+
 
 ;////////////////////////////////////////////////////
 
@@ -337,6 +354,8 @@ mouse:
     call ACTUALIZA_PROYECTIL ;Mueve las balas existentes
     call REVISA_COLISION_BALA_ENEMIGO ; Colision de las balas con los enemigos
 	call ACTUALIZA_ENEMIGO	 ;Mueve el enemigo y gestiona sus límites
+    call ENEMIGO_DISPARA        ; dispara DESPUÉS de moverlo
+    call ACTUALIZA_BALAS_ENEMIGAS
 
 saltar_logica_juego:
 	lee_mouse				 ;Siempre revisa el mouse (para poder dar click en Play)
@@ -1001,68 +1020,83 @@ salir:				;inicia etiqueta salir
 		ret
 	endp
 
-	;Lógica de movimiento y rebote del enemigo
-	ACTUALIZA_ENEMIGO proc
-		inc [enemigo_contador_vel]
-		
-		;Compara si el contador de velocidad alcanzó el umbral
-		mov al, [enemigo_contador_vel]
-		cmp al, [enemigo_umbral_mov]
-		jl fin_actualiza_enemigo ; Si es menor, no se mueve todavía
-		
-		;Reinicia el contador de velocidad
-		mov [enemigo_contador_vel], 0
 
-		;Borrar enemigo en la posición actual
-		call BORRA_ENEMIGO
-		
-		;Determinar la nueva posición y la dirección
-		mov al, [enemy_col]
-		mov bl, [enemigo_direccion]
 
-		;Checar si va a la derecha (enemigo_direccion = 1)
-		cmp bl, 1
-		je .mover_derecha
-		
-		;Si no es 1, asume izquierda (enemigo_direccion = 255)
-		;Revisar límite izquierdo (posición central del enemigo: lim_izquierdo + 2)
-		cmp al, lim_izquierdo + 2
-		jle .cambiar_a_derecha ; Si toca el límite, cambia dirección
-		
-		; Mover a la izquierda
-		dec [enemy_col]
-		jmp .dibujar_enemigo
-		
-	.mover_derecha:
-		; Revisar límite derecho (posición central del enemigo: lim_derecho - 2)
-		cmp al, lim_derecho - 2
-		jge .cambiar_a_izquierda ; Si toca el límite, cambia dirección
-		
-		; Mover a la derecha
-		inc [enemy_col]
-		jmp .dibujar_enemigo
-		
-	.cambiar_a_izquierda:
-		; Cambiar dirección a izquierda (255)
-		mov [enemigo_direccion], 255
-		; Mover a la izquierda para separarse del borde
-		dec [enemy_col]
-		jmp .dibujar_enemigo
 
-	.cambiar_a_derecha:
-		; Cambiar dirección a derecha (1)
-		mov [enemigo_direccion], 1
-		; Mover a la derecha para separarse del borde
-		inc [enemy_col]
-		jmp .dibujar_enemigo
+    ;==================== MOVIMIENTO ENEMIGO ==================================
 
-	.dibujar_enemigo:
-		; 3. Dibujar enemigo en la nueva posición
-		call IMPRIME_ENEMIGO
-		
-	fin_actualiza_enemigo:
-		ret
-	ACTUALIZA_ENEMIGO endp
+;---------------------------------------------------------
+; ACTUALIZA_ENEMIGO — Movimiento horizontal + vertical solo en bordes
+;---------------------------------------------------------
+ACTUALIZA_ENEMIGO proc
+
+    ; control de velocidad
+    inc [enemigo_contador_vel]
+    mov al, [enemigo_contador_vel]
+    cmp al, [enemigo_umbral_mov]
+    jl fin_mov_enemigo
+    mov byte ptr [enemigo_contador_vel], 0
+
+    ; borrar enemigo actual
+    call BORRA_ENEMIGO
+
+    ;------------------------------------
+    ; MOVIMIENTO HORIZONTAL
+    ;------------------------------------
+    mov al, [enemy_col]
+    mov bl, [enemigo_direccion]
+
+    ; si dirección es 1 → derecha
+    cmp bl, 1
+    je enemigo_mover_derecha
+
+enemigo_mover_izquierda:
+    dec al
+    mov [enemy_col], al
+
+    ; ¿tocó borde izquierdo?
+    cmp al, lim_izquierdo + 3
+    jg enemigo_dibujar
+
+    ; cambia dirección a derecha
+    mov byte ptr [enemigo_direccion], 1
+
+    ; MOVIMIENTO VERTICAL SOLO AQUI
+    inc [enemy_ren]      ; BAJA UNO
+    jmp enemigo_dibujar
+
+
+enemigo_mover_derecha:
+    inc al
+    mov [enemy_col], al
+
+    ; ¿tocó borde derecho?
+    cmp al, lim_derecho - 3
+    jl enemigo_dibujar
+
+    ; cambiar dirección a izquierda
+    mov byte ptr [enemigo_direccion], 255  ; -1
+
+    ; MOVIMIENTO VERTICAL SOLO AQUI
+    dec [enemy_ren]      ; SUBE UNO
+    jmp enemigo_dibujar
+
+;------------------------------------
+; DIBUJAR ENEMIGO
+;------------------------------------
+enemigo_dibujar:
+    call IMPRIME_ENEMIGO
+
+fin_mov_enemigo:
+    ret
+ACTUALIZA_ENEMIGO endp
+
+
+
+
+
+
+
 
 	;procedimiento IMPRIME_BOTON
 	;Dibuja un boton que abarca 3 renglones y 5 columnas
@@ -1261,6 +1295,123 @@ ACTUALIZA_PROYECTIL endp
     ret
     REVISA_COLISION_BALA_ENEMIGO endp
     ;------------------------------------------
+
+    ;=============================================
+
+
+    ;=============================balas enemigas ===============
+ENEMIGO_DISPARA proc
+
+    ;--------------------------------------------
+    ; Reloj del sistema (int 1Ah)
+    ;--------------------------------------------
+    mov ah, 00h
+    int 1Ah                ; DX = tick actual
+
+    ; ¿ha pasado suficiente tiempo para disparar?
+    mov bx, dx
+    sub bx, [tick_disparo_enemy]
+    cmp bx, 15              ; FRECUENCIA DE DISPARO (4 ticks ≈ 220 ms)
+    jl fin_disparo
+
+    mov [tick_disparo_enemy], dx
+
+
+    ;--------------------------------------------
+    ; Buscar bala libre
+    ;--------------------------------------------
+    mov si, 0
+buscar_slot:
+    cmp si, MAX_BE
+    jge fin_disparo
+
+    cmp byte ptr [be_activas + si], 0
+    je activar_bala_enemiga
+    inc si
+    jmp buscar_slot
+
+
+activar_bala_enemiga:
+    ; activar
+    mov byte ptr [be_activas + si], 1
+
+    ; posición de nacimiento
+    mov al, [enemy_ren]
+    inc al                     ; nace 1 renglon debajo
+    mov [be_ren + si], al
+
+    mov al, [enemy_col]
+    mov [be_col + si], al
+
+fin_disparo:
+    ret
+ENEMIGO_DISPARA endp
+
+
+;================Moviminento balas enemigas ================
+ACTUALIZA_BALAS_ENEMIGAS proc
+
+    ;--------------------------------------------
+    ; Control de velocidad de caída
+    ;--------------------------------------------
+    mov ah, 00h
+    int 1Ah
+
+    mov bx, dx
+    sub bx, [tick_be]
+    cmp bx, 2               ; velocidad (1 tick = misma velocidad que jugador)
+    jl fin_be
+
+    mov [tick_be], dx
+
+
+    ;--------------------------------------------
+    ; Recorrer todas las balas enemigas
+    ;--------------------------------------------
+    mov si, 0
+
+ciclo_be:
+    cmp si, MAX_BE
+    jge fin_be
+
+    cmp byte ptr [be_activas + si], 1
+    jne siguiente_be
+
+    ; borrar
+    mov al, [be_ren + si]
+    mov dl, [be_col + si]
+    posiciona_cursor al, dl
+    imprime_caracter_color ' ', cNegro, bgNegro
+
+    ; mover hacia abajo
+    inc byte ptr [be_ren + si]
+
+    ; si tocó límite inferior → desactivar
+    mov al, [be_ren + si]
+    cmp al, lim_inferior
+    jge apagar_be
+
+    ; dibujar en nueva posición
+    mov dl, [be_col + si]
+    posiciona_cursor al, dl
+    imprime_caracter_color '*', cRojo, bgNegro
+
+    jmp siguiente_be
+
+
+apagar_be:
+    mov byte ptr [be_activas + si], 0
+
+
+siguiente_be:
+    inc si
+    jmp ciclo_be
+
+fin_be:
+    ret
+ACTUALIZA_BALAS_ENEMIGAS endp
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;FIN PROCEDIMIENTOS;;;;;;
