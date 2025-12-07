@@ -103,7 +103,7 @@ play_inf 		equ 	play_ren+1
 ;////////////////////////////////////////////////////
 ;Definición de variables
 ;////////////////////////////////////////////////////
-titulo 			db 		"GALAGA"
+titulo 			db 		"Papup"
 scoreStr 		db 		"SCORE"
 hiscoreStr		db 		"HI-SCORE"
 livesStr		db 		"LIVES"
@@ -335,6 +335,7 @@ mouse:
 
 	call REVISAR_TECLADO	 ;Revisa teclado y dispara balas
     call ACTUALIZA_PROYECTIL ;Mueve las balas existentes
+    call REVISA_COLISION_BALA_ENEMIGO ; Colision de las balas con los enemigos
 	call ACTUALIZA_ENEMIGO	 ;Mueve el enemigo y gestiona sus límites
 
 saltar_logica_juego:
@@ -1123,71 +1124,143 @@ salir:				;inicia etiqueta salir
 	endp
 
 	;Procedimineto para actualizar múltiples balas
-    ACTUALIZA_PROYECTIL proc
-        ;Leer reloj del sistema para controlar velocidad
-        mov ah, 00h               
-        int 1Ah                   
-        mov bx, dx                
-        sub bx, [tick_anterior]   
-        cmp bx, 1                 
-        jl fin_actualiza          
+    ;===========================================================
+;   ACTUALIZA_PROYECTIL (CORREGIDO)
+;   Mueve las balas hacia arriba sin colisiones falsas
+;===========================================================
+ACTUALIZA_PROYECTIL proc
+    ;Leer reloj del sistema para controlar velocidad
+    mov ah, 00h               
+    int 1Ah                   
+    mov bx, dx                
+    sub bx, [tick_anterior]   
+    cmp bx, 1                 
+    jl fin_actualiza          
 
-        ;Si paso el tiempo, actualiza tick y mueve las balas
-        mov [tick_anterior], dx   
-        
-        mov si, 0           ;SI sera nuestro Indice (0 a 9)
+    ;Actualizar referencia de tiempo
+    mov [tick_anterior], dx   
     
-    ciclo_balas:
-        cmp si, MAX_BALAS   ;¿Ya revisamos las 10 balas?
-        jge fin_actualiza   ;Si SI >= 10, terminamos
+    mov si, 0                 ;Índice de bala (0..9)
 
-        cmp byte ptr [balas_activas + si], 1 ;¿Esta activa esta bala?
-        jne siguiente_bala          ;Si no, pasa a la siguiente
-        
-        ;Lógica para el movimiento de la bala actual
-        ;Borrar proyectil en posicion actual
-        mov al, [balas_ren + si]  
-        mov dl, [balas_col + si]  
-        posiciona_cursor al, dl
-        imprime_caracter_color ' ', cNegro, bgNegro 
+ciclo_balas:
+    cmp si, MAX_BALAS
+    jge fin_actualiza         ;Terminamos si ya revisamos todas
 
-        ;Mover hacia arriba
-        dec byte ptr [balas_ren + si] 
+    ;¿Está activa esta bala?
+    cmp byte ptr [balas_activas + si], 1
+    jne siguiente_bala
 
-        ;Verificar colisiones con la parte de arriba
-        mov al, [balas_ren + si]
-        cmp al, lim_superior
-        jle desactivar_bala_actual    
+    ;---------------------------------------------
+    ; Borrar la bala en la posición actual
+    ;---------------------------------------------
+    mov al, [balas_ren + si]
+    mov dl, [balas_col + si]
+    posiciona_cursor al, dl
+    imprime_caracter_color ' ', cNegro, bgNegro
 
-        ;Deteccion de colision (Enemigo)
-        mov dl, [balas_col + si]
-        posiciona_cursor al, dl       
-        mov ah, 08h                   
-        mov bh, 00h
-        int 10h                       
-        
-        cmp al, 32                    
-        jne desactivar_bala_actual    
+    ;---------------------------------------------
+    ; Mover la bala hacia arriba
+    ;---------------------------------------------
+    dec byte ptr [balas_ren + si]
 
-        ;Dibujar en nueva posicion (Solo si no choco)
-        mov al, [balas_ren + si]
-        mov dl, [balas_col + si]
-        posiciona_cursor al, dl
-        imprime_caracter_color '*', cAmarillo, bgNegro 
+    ;---------------------------------------------
+    ; Si la bala llega al límite superior, se apaga
+    ;---------------------------------------------
+    mov al, [balas_ren + si]
+    cmp al, lim_superior
+    jle apagar_bala
 
-        jmp siguiente_bala
+    ;---------------------------------------------
+    ; Dibujar la bala en la nueva posición
+    ; (Colisión verdadera la maneja REVISA_COLISION_BALA_ENEMIGO)
+    ;---------------------------------------------
+    mov dl, [balas_col + si]
+    posiciona_cursor al, dl
+    imprime_caracter_color '*', cAmarillo, bgNegro
 
-    desactivar_bala_actual:
+    jmp siguiente_bala
 
-        mov byte ptr [balas_activas + si], 0 
+apagar_bala:
+    mov byte ptr [balas_activas + si], 0
 
-    siguiente_bala:
-        inc si              ;Pasamos a la siguiente bala
-        jmp ciclo_balas     ;Repetimos el ciclo
+siguiente_bala:
+    inc si
+    jmp ciclo_balas
 
-    fin_actualiza:
-        ret
-    ACTUALIZA_PROYECTIL endp
+fin_actualiza:
+    ret
+ACTUALIZA_PROYECTIL endp
+
+
+    ;===========================================================
+    ;   REVISA_COLISION_BALA_ENEMIGO
+    ;   Recorre todas las balas activas y verifica si alguna
+    ;   coincide con la posición del enemigo.
+    ;===========================================================
+    REVISA_COLISION_BALA_ENEMIGO proc
+    mov si, 0
+    mov cx, MAX_BALAS
+
+    revisar_siguiente_bala:
+    ; ¿Está activa la bala?
+    cmp byte ptr [balas_activas + si], 1
+    jne continuar_revision
+
+    ; Compara columna
+    mov al, [balas_col + si]
+    cmp al, [enemy_col]
+    jne continuar_revision
+
+    ; Compara renglón
+    mov al, [balas_ren + si]
+    cmp al, [enemy_ren]
+    jne continuar_revision
+
+    ;=====================================================
+    ;   COLISION DETECTADA
+    ;=====================================================
+    ; Se borra la bala en pantalla
+    push cx
+    mov dl, [balas_col + si]
+    mov al, [balas_ren + si]
+    posiciona_cursor al, dl
+    imprime_caracter_color ' ', cNegro, bgNegro
+    pop cx
+
+    ; Se desactiva la bala
+    mov byte ptr [balas_activas + si], 0
+
+    ;----------------------------------------------
+    ;   Incrementar score
+    ;----------------------------------------------
+    inc word ptr [player_score]
+
+    ; Actualizar score visual
+    call BORRA_SCORE
+    call IMPRIME_SCORE
+
+    ;----------------------------------------------
+    ;   Eliminar enemigo y regenerarlo arriba
+    ;----------------------------------------------
+    call BORRA_ENEMIGO
+
+    mov [enemy_col], ini_columna
+    mov [enemy_ren], 3
+    mov [enemigo_direccion], 1
+
+    call IMPRIME_ENEMIGO
+
+    ; Una bala solo puede golpear una vez → termina
+    jmp fin_revision
+
+    continuar_revision:
+    inc si
+    loop revisar_siguiente_bala
+
+    fin_revision:
+    ret
+    REVISA_COLISION_BALA_ENEMIGO endp
+    ;------------------------------------------
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;FIN PROCEDIMIENTOS;;;;;;
