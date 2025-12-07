@@ -1303,22 +1303,21 @@ ACTUALIZA_PROYECTIL endp
 ENEMIGO_DISPARA proc
 
     ;--------------------------------------------
-    ; Reloj del sistema (int 1Ah)
+    ; Control de cadencia de disparo usando ticks
     ;--------------------------------------------
     mov ah, 00h
-    int 1Ah                ; DX = tick actual
+    int 1Ah             ; DX = tick actual
 
-    ; ¿ha pasado suficiente tiempo para disparar?
     mov bx, dx
     sub bx, [tick_disparo_enemy]
-    cmp bx, 15              ; FRECUENCIA DE DISPARO (4 ticks ≈ 220 ms)
+    cmp bx, 12          ; CADENCIA (más alto = dispara menos)
     jl fin_disparo
 
     mov [tick_disparo_enemy], dx
 
 
     ;--------------------------------------------
-    ; Buscar bala libre
+    ; Buscar una bala libre
     ;--------------------------------------------
     mov si, 0
 buscar_slot:
@@ -1326,20 +1325,22 @@ buscar_slot:
     jge fin_disparo
 
     cmp byte ptr [be_activas + si], 0
-    je activar_bala_enemiga
+    je activar_bala_enemigo
+
     inc si
     jmp buscar_slot
 
 
-activar_bala_enemiga:
-    ; activar
+activar_bala_enemigo:
+    ; Activar bala
     mov byte ptr [be_activas + si], 1
 
-    ; posición de nacimiento
+    ; Nacer dos renglones debajo del enemigo (para que no se borre)
     mov al, [enemy_ren]
-    inc al                     ; nace 1 renglon debajo
+    add al, 2
     mov [be_ren + si], al
 
+    ; Columna igual a la del enemigo
     mov al, [enemy_col]
     mov [be_col + si], al
 
@@ -1359,7 +1360,7 @@ ACTUALIZA_BALAS_ENEMIGAS proc
 
     mov bx, dx
     sub bx, [tick_be]
-    cmp bx, 2               ; velocidad (1 tick = misma velocidad que jugador)
+    cmp bx, 1               ; VELOCIDAD (1 = rápida, 2 = media, 3 = lenta)
     jl fin_be
 
     mov [tick_be], dx
@@ -1369,32 +1370,42 @@ ACTUALIZA_BALAS_ENEMIGAS proc
     ; Recorrer todas las balas enemigas
     ;--------------------------------------------
     mov si, 0
-
 ciclo_be:
+
     cmp si, MAX_BE
     jge fin_be
 
     cmp byte ptr [be_activas + si], 1
     jne siguiente_be
 
-    ; borrar
+
+    ;--------------------------------------------
+    ; Borrar la bala en su posición anterior
+    ;--------------------------------------------
     mov al, [be_ren + si]
     mov dl, [be_col + si]
     posiciona_cursor al, dl
     imprime_caracter_color ' ', cNegro, bgNegro
 
-    ; mover hacia abajo
+
+    ;--------------------------------------------
+    ; Mover bala hacia abajo
+    ;--------------------------------------------
     inc byte ptr [be_ren + si]
 
-    ; si tocó límite inferior → desactivar
+
+    ; Si toca límite inferior → desactivar
     mov al, [be_ren + si]
     cmp al, lim_inferior
     jge apagar_be
 
-    ; dibujar en nueva posición
+
+    ;--------------------------------------------
+    ; Dibujar en nueva posición
+    ;--------------------------------------------
     mov dl, [be_col + si]
     posiciona_cursor al, dl
-    imprime_caracter_color '*', cRojo, bgNegro
+    imprime_caracter_color '*', cAmarillo, bgNegro
 
     jmp siguiente_be
 
@@ -1406,6 +1417,7 @@ apagar_be:
 siguiente_be:
     inc si
     jmp ciclo_be
+
 
 fin_be:
     ret
